@@ -26,7 +26,7 @@ class APIKeyService:
     RATE_WINDOW = 60  # seconds
 
     @staticmethod
-    async def generate_api_key(session: AsyncSession) -> str:
+    async def generate_api_key(session: AsyncSession, user_id: str | None = None) -> str:
         """Generate a new unique API key."""
         while True:
             key = f"sk_{secrets.token_urlsafe(32)}"
@@ -36,7 +36,7 @@ class APIKeyService:
             result = await session.execute(stmt)
             if result.scalars().first() is None:
                 # Key is unique, create it
-                api_key_db = APIKeyDB(key=key)
+                api_key_db = APIKeyDB(key=key, user_id=user_id)
                 session.add(api_key_db)
                 await session.commit()
                 return key
@@ -92,6 +92,31 @@ class APIKeyService:
             return True, remaining
 
         return False, 0
+    
+    @staticmethod
+    async def get_usage_stats(
+        session: AsyncSession, api_key: str
+    ) -> tuple[int, datetime]:
+        """
+        Get current usage statistics without modifying them.
+        Returns: (current_request_count, last_reset)
+        """
+        api_key_obj = await APIKeyService.get_api_key_by_key(session, api_key)
+        
+        if not api_key_obj:
+            return 0, datetime.now(timezone.utc).replace(tzinfo=None)
+            
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        window_start = now - timedelta(seconds=APIKeyService.RATE_WINDOW)
+        
+        current_count = int(api_key_obj.request_count) if api_key_obj.request_count else 0 # type: ignore
+        last_reset = api_key_obj.last_reset or datetime.now(timezone.utc).replace(tzinfo=None) # type: ignore
+        
+        # If window expired logically, it's 0, even though we haven't updated it yet
+        if last_reset < window_start: # type: ignore
+            return 0, now
+            
+        return current_count, last_reset # type: ignore
 
 
 # ============================================================================

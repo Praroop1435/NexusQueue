@@ -12,16 +12,14 @@ dependencies = [
     "aiosqlite>=0.22.1",
     "fastapi>=0.135.3",
     "httpx>=0.28.1",
-    "pydantic>=2.13.1",
+    "passlib[bcrypt]>=1.7.4",
+    "pydantic[email]>=2.13.1",
     "pydantic-settings>=2.13.1",
+    "pyjwt>=2.12.1",
     "sqlalchemy[asyncio]>=2.0.49",
     "uvicorn[standard]>=0.44.0",
+    "bcrypt==3.2.2",
 ]
-
-[project.scripts]
-dev = "uvicorn backend.main:app --reload"
-start = "uvicorn backend.main:app --host 0.0.0.0 --port 8000"
-test = "python test_api.py"
 
 [tool.uv]
 managed = true

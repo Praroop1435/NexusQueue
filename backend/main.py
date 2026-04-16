@@ -7,12 +7,15 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .database import get_session, init_db
-from .models import APIKeyResponse, JobStatusResponse, JobSubmissionRequest, JobSubmissionResponse, SecureDataResponse
+from .models import APIKeyResponse, JobStatusResponse, JobSubmissionRequest, JobSubmissionResponse, SecureDataResponse, APIUsageResponse, UserCreate, UserLogin, TokenResponse, UserDB
 from .services import APIKeyService, JobProcessingService
+from .auth import get_password_hash, verify_password, create_access_token, get_current_user
+from sqlalchemy.future import select
 
 
 # ============================================================================
@@ -38,6 +41,45 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Allow CORS for Next.js frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# ============================================================================
+# User Authentication Endpoints
+# ============================================================================
+
+@app.post("/auth/register", status_code=201, tags=["Authentication"], summary="Register new user")
+async def register(user: UserCreate, session: AsyncSession = Depends(get_session)):
+    stmt = select(UserDB).where(UserDB.email == user.email)
+    result = await session.execute(stmt)
+    if result.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="Email already registered")
+        
+    hashed_pwd = get_password_hash(user.password)
+    new_user = UserDB(email=user.email, hashed_password=hashed_pwd)
+    session.add(new_user)
+    await session.commit()
+    return {"message": "User registered successfully"}
+
+@app.post("/auth/login", response_model=TokenResponse, tags=["Authentication"], summary="Login and get token")
+async def login(user: UserLogin, session: AsyncSession = Depends(get_session)):
+    stmt = select(UserDB).where(UserDB.email == user.email)
+    result = await session.execute(stmt)
+    db_user = result.scalar_one_or_none()
+    
+    if not db_user or not verify_password(user.password, db_user.hashed_password):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+        
+    access_token = create_access_token(data={"sub": db_user.email})
+    return TokenResponse(access_token=access_token, token_type="bearer")
+
 
 # ============================================================================
 # Task 1: API Key & Rate Limiting Endpoints
@@ -52,12 +94,40 @@ app = FastAPI(
     summary="Generate a new API key",
     description="Generate a new unique API key for rate-limited access.",
 )
-async def generate_api_key(session: AsyncSession = Depends(get_session)) -> APIKeyResponse:
+async def generate_api_key(
+    session: AsyncSession = Depends(get_session),
+    current_user: UserDB = Depends(get_current_user)
+) -> APIKeyResponse:
     """Generate a new API key."""
-    api_key = await APIKeyService.generate_api_key(session)
+    api_key = await APIKeyService.generate_api_key(session, current_user.id)
     return APIKeyResponse(
         api_key=api_key,
         created_at=datetime.now(timezone.utc).replace(tzinfo=None),
+    )
+
+
+@app.get(
+    "/api-keys/{api_key}/usage",
+    response_model=APIUsageResponse,
+    status_code=200,
+    tags=["Task 1: API Key Management"],
+    summary="Get API key usage statistics",
+    description="Retrieve the current request count out of the rate limit capacity over the sliding window.",
+)
+async def get_api_key_usage(
+    api_key: str,
+    session: AsyncSession = Depends(get_session),
+    current_user: UserDB = Depends(get_current_user)
+) -> APIUsageResponse:
+    """Get real-time tracking data for a specific API Key."""
+    current_count, last_reset = await APIKeyService.get_usage_stats(session, api_key)
+    
+    return APIUsageResponse(
+        api_key_prefix=api_key[:8] + "...",
+        request_count=current_count,
+        rate_limit=APIKeyService.RATE_LIMIT,
+        window_seconds=APIKeyService.RATE_WINDOW,
+        last_reset=last_reset
     )
 
 

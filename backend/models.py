@@ -6,12 +6,29 @@ from datetime import datetime, timezone
 from typing import Literal, Optional
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
-from sqlalchemy import Column, DateTime, Integer, String
-from sqlalchemy.orm import declarative_base
+from pydantic import BaseModel, Field, EmailStr
+from sqlalchemy import Column, DateTime, Integer, String, ForeignKey
+from sqlalchemy.orm import declarative_base, relationship
 
 # Database base for SQLAlchemy models
 Base = declarative_base()
+
+
+# ============================================================================
+# User Authentication - SQLAlchemy Models
+# ============================================================================
+
+class UserDB(Base):
+    """SQLAlchemy model for Users."""
+
+    __tablename__ = "users"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid4()))
+    email = Column(String, unique=True, index=True, nullable=False)
+    hashed_password = Column(String, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
+
+    api_keys = relationship("APIKeyDB", back_populates="user")
 
 
 # ============================================================================
@@ -25,10 +42,13 @@ class APIKeyDB(Base):
     __tablename__ = "api_keys"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid4()))
+    user_id = Column(String, ForeignKey("users.id"), nullable=True)
     key = Column(String, unique=True, nullable=False, index=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
     request_count = Column(Integer, default=0, nullable=False)
     last_reset = Column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
+
+    user = relationship("UserDB", back_populates="api_keys")
 
 
 # ============================================================================
@@ -54,6 +74,26 @@ class JobDB(Base):
 
 
 # ============================================================================
+# User Authentication - Pydantic Models
+# ============================================================================
+
+class UserCreate(BaseModel):
+    """Schema for user registration."""
+    email: EmailStr = Field(..., description="User email address")
+    password: str = Field(..., description="User password (min 6 chars)", min_length=6)
+
+class UserLogin(BaseModel):
+    """Schema for user login."""
+    email: EmailStr = Field(..., description="User email address")
+    password: str = Field(..., description="User password")
+
+class TokenResponse(BaseModel):
+    """Schema for returning JWT token."""
+    access_token: str = Field(..., description="JWT Bearer token")
+    token_type: str = Field(..., description="Type of token, usually 'bearer'")
+
+
+# ============================================================================
 # Task 1: API Key & Rate Limiting - Pydantic Models
 # ============================================================================
 
@@ -69,6 +109,18 @@ class APIKeyResponse(BaseModel):
 
     api_key: str = Field(..., description="The generated API key")
     created_at: datetime = Field(..., description="Timestamp of key creation")
+
+    model_config = {"from_attributes": True}
+
+
+class APIUsageResponse(BaseModel):
+    """Response model for API key usage analytics."""
+
+    api_key_prefix: str = Field(..., description="First few characters of the API key")
+    request_count: int = Field(..., description="Number of requests made in the current window")
+    rate_limit: int = Field(..., description="Maximum allowed requests per window")
+    window_seconds: int = Field(..., description="Duration of the rate limit window in seconds")
+    last_reset: datetime = Field(..., description="Timestamp of the last rate limit window reset")
 
     model_config = {"from_attributes": True}
 
