@@ -118,5 +118,4 @@ For high-traffic production environments, the following upgrades are recommended
 3.  **Database**: Migrate from SQLite to **PostgreSQL** with async connection pooling (e.g., `asyncpg`).
 4.  **Security**: Hash API keys in the database using `scrypt` or `argon2` instead of plaintext storage.
 
----
-Developed with ❤️ by Praroop Anand
+
