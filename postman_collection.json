@@ -2,16 +2,115 @@
 	"info": {
 		"_postman_id": "job-processing-api-collection",
 		"name": "Job Processing API",
-		"description": "Collection for testing Task 1 (API Key & Rate Limiting) and Task 2 (Background Job Processing)",
+		"description": "Collection for testing Task 1 (API Key & Rate Limiting), Task 2 (Background Job Processing), and the new Authentication Gateway.",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
 	"item": [
 		{
+			"name": "Authentication",
+			"item": [
+				{
+					"name": "Register User",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"testuser@gateway.local\",\n    \"password\": \"securepassword123\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/register",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"auth",
+								"register"
+							]
+						},
+						"description": "Register a new user identity"
+					},
+					"response": []
+				},
+				{
+					"name": "Login & Fetch Token",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    var jsonData = pm.response.json();",
+									"    pm.collectionVariables.set(\"jwt_token\", jsonData.access_token);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"testuser@gateway.local\",\n    \"password\": \"securepassword123\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/login",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"auth",
+								"login"
+							]
+						},
+						"description": "Authenticate user and automatically save the Bearer token to your Postman Collection Environment"
+					},
+					"response": []
+				}
+			]
+		},
+		{
 			"name": "Task 1: API Key & Rate Limiting",
 			"item": [
 				{
-					"name": "Generate API Key",
+					"name": "Generate Secure API Key",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    var jsonData = pm.response.json();",
+									"    pm.collectionVariables.set(\"api_key\", jsonData.api_key);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{jwt_token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "POST",
 						"header": [],
 						"url": {
@@ -23,12 +122,42 @@
 								"api-keys"
 							]
 						},
-						"description": "Generate a new unique API key"
+						"description": "Generate a new unique API key, locked safely behind your active JWT token."
 					},
 					"response": []
 				},
 				{
-					"name": "Access Secure Data",
+					"name": "Verify Rate Limit Status (Usage)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{jwt_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api-keys/{{api_key}}/usage",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api-keys",
+								"{{api_key}}",
+								"usage"
+							]
+						},
+						"description": "Pull the exact capacity tracking limits of an API key dynamically."
+					},
+					"response": []
+				},
+				{
+					"name": "Access Secure Data Trigger",
 					"request": {
 						"method": "GET",
 						"header": [
@@ -47,7 +176,7 @@
 								"secure-data"
 							]
 						},
-						"description": "Access protected data with rate limiting"
+						"description": "Access protected dummy data using sliding-window rate limits to simulate usage load."
 					},
 					"response": []
 				}
@@ -58,18 +187,31 @@
 			"item": [
 				{
 					"name": "Submit Job",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 202) {",
+									"    var jsonData = pm.response.json();",
+									"    pm.collectionVariables.set(\"job_id\", jsonData.job_id);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
 					"request": {
 						"method": "POST",
 						"header": [
 							{
 								"key": "Content-Type",
-								"value": "application/json",
-								"type": "text"
+								"value": "application/json"
 							}
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"task\": \"Process large dataset\"\n}"
+							"raw": "{\n    \"task\": \"Process mathematical algorithms directly from Postman\"\n}"
 						},
 						"url": {
 							"raw": "{{base_url}}/jobs",
@@ -128,26 +270,6 @@
 			]
 		}
 	],
-	"event": [
-		{
-			"listen": "prerequest",
-			"script": {
-				"type": "text/javascript",
-				"exec": [
-					""
-				]
-			}
-		},
-		{
-			"listen": "test",
-			"script": {
-				"type": "text/javascript",
-				"exec": [
-					""
-				]
-			}
-		}
-	],
 	"variable": [
 		{
 			"key": "base_url",
@@ -155,13 +277,18 @@
 			"type": "string"
 		},
 		{
+			"key": "jwt_token",
+			"value": "",
+			"type": "string"
+		},
+		{
 			"key": "api_key",
-			"value": "your_api_key_here",
+			"value": "",
 			"type": "string"
 		},
 		{
 			"key": "job_id",
-			"value": "your_job_id_here",
+			"value": "",
 			"type": "string"
 		}
 	]
